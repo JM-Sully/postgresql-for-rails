@@ -10,7 +10,7 @@ gem 'pg_query', '~> 6.1'
 gem 'pg_search', '~> 2.3'
 gem 'prosopite', '~> 1.4' # identify N+1 queries
 gem 'puma', '~> 6.4'
-gem 'rails', '>= 7.1', '~> 7.1' # , git: 'https://github.com/rails/rails.git'
+gem 'rails', '>= 7.2', '~> 7.2' # , git: 'https://github.com/rails/rails.git'
 gem 'whenever', '~> 1.0', require: false # manage scheduled jobs
 gem 'fast_count', '~> 0.3'
 
