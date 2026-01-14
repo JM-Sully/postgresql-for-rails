@@ -59,7 +59,7 @@ Rails.application.configure do
   # config.action_view.raise_on_missing_translations = true
 
   # https://github.com/rails/sprockets-rails/issues/376#issuecomment-287560399
-  logger = ActiveSupport::Logger.new(STDOUT)
+  logger = ActiveSupport::Logger.new($stdout)
   logger.formatter = config.logger
   config.logger = ActiveSupport::TaggedLogging.new(logger)
 
