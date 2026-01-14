@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class CreateVehicleReservations < ActiveRecord::Migration[7.0]
   # https://wiki.postgresql.org/wiki/Don%27t_Do_This#Don.27t_use_timestamp_.28without_time_zone.29
   # https://discuss.rubyonrails.org/t/postgres-timestampz-by-default-in-rails-6-2/76537

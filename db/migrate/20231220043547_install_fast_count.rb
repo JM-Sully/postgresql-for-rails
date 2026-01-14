@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class InstallFastCount < ActiveRecord::Migration[7.1]
   def change
     # We are upgrading the gem, so we want to replace the current fast_count function

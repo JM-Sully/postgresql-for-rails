@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class RemoveStatusColumnFromVehicles < ActiveRecord::Migration[7.0]
   def change
     # removing this to replace it with a DB enum

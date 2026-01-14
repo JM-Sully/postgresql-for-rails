@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 #
 # This overrides the built-in db:reset task
 #

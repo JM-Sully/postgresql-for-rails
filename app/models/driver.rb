@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Driver < User
   has_many :trips
 

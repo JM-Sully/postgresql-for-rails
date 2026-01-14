@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Inspiration: https://twitter.com/kukicola/status/1578842934849724416
 class SlowQuerySubscriber < ActiveSupport::Subscriber
   SECONDS_THRESHOLD = 1.0

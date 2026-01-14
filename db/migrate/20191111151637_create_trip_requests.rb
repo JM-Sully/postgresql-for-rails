@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class CreateTripRequests < ActiveRecord::Migration[6.0]
   def change
     # Indexes: Rails adds PK index

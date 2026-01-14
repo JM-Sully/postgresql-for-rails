@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class TripCreator
   class TripCreationFailure < StandardError; end
 

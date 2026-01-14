@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddUniqueConstraintUsersEmail < ActiveRecord::Migration[7.1]
   def change
     # Potentially unsafe in production, but ok

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'test_helper'
 
 class AuthenticationControllerTest < ActionDispatch::IntegrationTest
@@ -9,9 +11,9 @@ class AuthenticationControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert jwt_payload = JSON.parse(response.body)
-    assert jwt_payload.has_key?('token')
-    assert jwt_payload.has_key?('exp')
-    assert jwt_payload.has_key?('username')
+    assert jwt_payload.key?('token')
+    assert jwt_payload.key?('exp')
+    assert jwt_payload.key?('username')
 
     assert_equal rider.display_name, jwt_payload['username']
   end

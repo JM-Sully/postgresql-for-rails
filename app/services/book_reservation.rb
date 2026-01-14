@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class BookReservation
   def initialize(vehicle_id:, rider_id:,
                  start_location_id:, end_location_id:,

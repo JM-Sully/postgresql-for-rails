@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class FastSearchResult < ApplicationRecord
   # this isn't strictly necessary, but it will prevent
   # rails from calling save, which would fail anyway.

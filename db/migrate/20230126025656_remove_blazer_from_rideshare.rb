@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class RemoveBlazerFromRideshare < ActiveRecord::Migration[7.1]
   def change
     # No longer using Blazer

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class EnableExtensionPgStatStatements < ActiveRecord::Migration[7.1]
   # PGSS = 'pg_stat_statements'
   #

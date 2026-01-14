@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class ValidateForeignKeyConstraints < ActiveRecord::Migration[6.0]
   def change
     # https://github.com/ankane/strong_migrations#good-5

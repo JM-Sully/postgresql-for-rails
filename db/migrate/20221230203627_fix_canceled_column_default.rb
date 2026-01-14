@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class FixCanceledColumnDefault < ActiveRecord::Migration[7.1]
   def change
     # by default, reservations should be canceled=false

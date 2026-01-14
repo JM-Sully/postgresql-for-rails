@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AuthenticationController < ApiController
   before_action :authorize_request, except: :login
 

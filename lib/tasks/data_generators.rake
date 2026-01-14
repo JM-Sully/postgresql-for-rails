@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'faker'
 
 namespace :data_generators do
@@ -84,7 +86,7 @@ namespace :data_generators do
       )
 
       # for about 1/4 of the trips, give them a random rating
-      rating = i % 4 == 0 ? rand(1..5) : nil
+      rating = (i % 4).zero? ? rand(1..5) : nil
 
       request.create_trip!(
         driver: drivers.sample,
@@ -239,13 +241,13 @@ end
 
 def random_mn_drivers_license_number(fname, i)
   [
-    "#{fname.first.upcase}",
+    fname.first.upcase.to_s,
     '800000',
     (rand * 10).to_i.to_s,
     (rand * 10).to_i.to_s,
     (rand * 10).to_i.to_s,
     (rand * 10).to_i.to_s,
     (rand * 10).to_i.to_s,
-    "#{i}"
+    i.to_s
   ].join
 end
