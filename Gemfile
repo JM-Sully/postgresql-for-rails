@@ -4,6 +4,7 @@ source 'https://rubygems.org'
 
 gem 'activerecord-import', '~> 1.5'
 gem 'bcrypt', '~> 3.1' # Use ActiveModel has_secure_password
+gem 'fast_count', '~> 0.3'
 gem 'fast_jsonapi', '~> 1.5'
 gem 'geocoder', '~> 1.8'
 gem 'jwt', '~> 2.7'
@@ -14,7 +15,6 @@ gem 'prosopite', '~> 1.4' # identify N+1 queries
 gem 'puma', '~> 6.4'
 gem 'rails', '>= 7.2', '~> 7.2' # , git: 'https://github.com/rails/rails.git'
 gem 'whenever', '~> 1.0', require: false # manage scheduled jobs
-gem 'fast_count', '~> 0.3'
 
 # assets gems default Rails 7 app
 gem 'importmap-rails', '~> 1.2'
