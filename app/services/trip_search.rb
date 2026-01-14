@@ -8,7 +8,7 @@ class TripSearch
   end
 
   def start_location
-    if text = params[:start_location]
+    if (text = params[:start_location])
       Trip.with_start_location(sanitize(text))
     else
       Trip.all
@@ -16,7 +16,7 @@ class TripSearch
   end
 
   def driver_name
-    if text = params[:driver_name]
+    if (text = params[:driver_name])
       Trip.with_driver_name(sanitize(text))
     else
       Trip.all
@@ -24,7 +24,7 @@ class TripSearch
   end
 
   def rider_name
-    if text = params[:rider_name]
+    if (text = params[:rider_name])
       Trip.with_rider_name(sanitize(text))
     else
       Trip.all
