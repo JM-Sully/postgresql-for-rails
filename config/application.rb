@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative 'boot'
 
 # https://andycroll.com/ruby/turn-off-the-bits-of-rails-you-dont-use/

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class VehicleReservation < ApplicationRecord
   belongs_to :vehicle
   belongs_to :trip_request

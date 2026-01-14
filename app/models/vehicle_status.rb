@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class VehicleStatus
   DRAFT = 'draft'.freeze
   PUBLISHED = 'published'.freeze

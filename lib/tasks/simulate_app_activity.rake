@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 #
 # bin/rails simulate:app_activity
 #

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # lib/tasks/migration_hooks.rb
 #
 # https://www.dan-manges.com/blog/modifying-rake-tasks

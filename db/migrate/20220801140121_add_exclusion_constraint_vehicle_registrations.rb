@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddExclusionConstraintVehicleRegistrations < ActiveRecord::Migration[7.0]
   def change
     # NOTE: Depends on btree_gist extension being created in scripts/db_setup.sh by superuser

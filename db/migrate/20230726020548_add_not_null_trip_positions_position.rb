@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddNotNullTripPositionsPosition < ActiveRecord::Migration[7.1]
   def change
     # Not on a live system

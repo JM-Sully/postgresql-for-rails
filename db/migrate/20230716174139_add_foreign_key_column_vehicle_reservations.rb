@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddForeignKeyColumnVehicleReservations < ActiveRecord::Migration[7.1]
   def change
     safety_assured do

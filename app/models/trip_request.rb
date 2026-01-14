@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class TripRequest < ApplicationRecord
   belongs_to :rider, class_name: 'User'
   belongs_to :start_location, class_name: 'Location'

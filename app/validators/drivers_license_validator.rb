@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class DriversLicenseValidator < ActiveModel::EachValidator
   # https://success.myshn.net/Data_Protection/Data_Identifiers/U.S._Driver%27s_License_Numbers
   # valid example: P800000224322

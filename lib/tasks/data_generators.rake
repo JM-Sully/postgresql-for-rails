@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'faker'
 
 namespace :data_generators do

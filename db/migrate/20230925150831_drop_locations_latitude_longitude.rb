@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class DropLocationsLatitudeLongitude < ActiveRecord::Migration[7.1]
   def change
     # migrated these to a single point type column=>"position"

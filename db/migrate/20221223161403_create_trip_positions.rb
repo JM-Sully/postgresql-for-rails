@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class CreateTripPositions < ActiveRecord::Migration[7.1]
   def change
     create_table :trip_positions do |t|

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Safe by default, add dry_run=false when ready
 # Prep:
 # export PGSLICE_URL

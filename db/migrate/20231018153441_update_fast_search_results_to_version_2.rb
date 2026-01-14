@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class UpdateFastSearchResultsToVersion2 < ActiveRecord::Migration[7.1]
   def change
     update_view :fast_search_results,

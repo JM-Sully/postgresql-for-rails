@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Api::TripRequestsController < ApiController
   def create
     if start_location && end_location && current_rider

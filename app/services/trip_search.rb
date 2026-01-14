@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class TripSearch
   attr_reader :params
 

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class Api::TripsController < ApiController
   before_action :authorize_request, only: :my
 

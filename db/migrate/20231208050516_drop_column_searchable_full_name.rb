@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class DropColumnSearchableFullName < ActiveRecord::Migration[7.1]
   def change
     # Add this migration back in order to use:

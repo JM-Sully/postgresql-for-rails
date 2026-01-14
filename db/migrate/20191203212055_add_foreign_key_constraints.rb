@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddForeignKeyConstraints < ActiveRecord::Migration[6.0]
   def change
     # https://guides.rubyonrails.org/active_record_migrations.html#foreign-keys

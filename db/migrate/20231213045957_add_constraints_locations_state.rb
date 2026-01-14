@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddConstraintsLocationsState < ActiveRecord::Migration[7.1]
   def change
     # I've verified all the locations have a 2-char state

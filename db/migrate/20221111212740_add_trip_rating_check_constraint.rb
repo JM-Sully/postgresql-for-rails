@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddTripRatingCheckConstraint < ActiveRecord::Migration[7.0]
   def change
     add_check_constraint :trips,
