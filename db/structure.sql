@@ -27,6 +27,7 @@ DROP INDEX IF EXISTS rideshare.index_trips_on_driver_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_start_location_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_rider_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_end_location_id;
+DROP INDEX IF EXISTS rideshare.index_locations_on_city_and_state;
 DROP INDEX IF EXISTS rideshare.index_locations_on_address;
 DROP INDEX IF EXISTS rideshare.index_fast_search_results_on_driver_id;
 ALTER TABLE IF EXISTS ONLY rideshare.vehicles DROP CONSTRAINT IF EXISTS vehicles_pkey;
@@ -644,6 +645,13 @@ CREATE UNIQUE INDEX index_locations_on_address ON rideshare.locations USING btre
 
 
 --
+-- Name: index_locations_on_city_and_state; Type: INDEX; Schema: rideshare; Owner: -
+--
+
+CREATE UNIQUE INDEX index_locations_on_city_and_state ON rideshare.locations USING btree (city, state);
+
+
+--
 -- Name: index_trip_requests_on_end_location_id; Type: INDEX; Schema: rideshare; Owner: -
 --
 
@@ -784,6 +792,7 @@ ALTER TABLE ONLY rideshare.trip_requests
 SET search_path TO rideshare;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260216094818'),
 ('20260128085515'),
 ('20231220043547'),
 ('20231218215836'),
