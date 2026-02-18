@@ -36,6 +36,7 @@ ALTER TABLE IF EXISTS ONLY rideshare.users DROP CONSTRAINT IF EXISTS users_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trips DROP CONSTRAINT IF EXISTS trips_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trip_requests DROP CONSTRAINT IF EXISTS trip_requests_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trip_positions DROP CONSTRAINT IF EXISTS trip_positions_pkey;
+ALTER TABLE IF EXISTS rideshare.vehicle_reservations DROP CONSTRAINT IF EXISTS starts_at_less_than_ends_at;
 ALTER TABLE IF EXISTS ONLY rideshare.schema_migrations DROP CONSTRAINT IF EXISTS schema_migrations_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.vehicle_reservations DROP CONSTRAINT IF EXISTS non_overlapping_vehicle_registration;
 ALTER TABLE IF EXISTS ONLY rideshare.locations DROP CONSTRAINT IF EXISTS locations_pkey;
@@ -232,7 +233,6 @@ CREATE TABLE rideshare.users (
     trips_count integer,
     drivers_license_number character varying(100)
 );
-ALTER TABLE ONLY rideshare.users ALTER COLUMN first_name SET STATISTICS 100;
 
 
 --
@@ -240,13 +240,6 @@ ALTER TABLE ONLY rideshare.users ALTER COLUMN first_name SET STATISTICS 100;
 --
 
 COMMENT ON TABLE rideshare.users IS 'sensitive_fields|first_name:scrub_text,last_name:scrub_text,email:scrub_email';
-
-
---
--- Name: COLUMN users.first_name; Type: COMMENT; Schema: rideshare; Owner: -
---
-
-COMMENT ON COLUMN rideshare.users.first_name IS 'sensitive_data=true';
 
 
 --
@@ -583,6 +576,14 @@ ALTER TABLE ONLY rideshare.schema_migrations
 
 
 --
+-- Name: vehicle_reservations starts_at_less_than_ends_at; Type: CHECK CONSTRAINT; Schema: rideshare; Owner: -
+--
+
+ALTER TABLE rideshare.vehicle_reservations
+    ADD CONSTRAINT starts_at_less_than_ends_at CHECK ((starts_at < ends_at)) NOT VALID;
+
+
+--
 -- Name: trip_positions trip_positions_pkey; Type: CONSTRAINT; Schema: rideshare; Owner: -
 --
 
@@ -792,6 +793,7 @@ ALTER TABLE ONLY rideshare.trip_requests
 SET search_path TO rideshare;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260218073907'),
 ('20260216094818'),
 ('20260128085515'),
 ('20231220043547'),
