@@ -36,7 +36,6 @@ ALTER TABLE IF EXISTS ONLY rideshare.users DROP CONSTRAINT IF EXISTS users_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trips DROP CONSTRAINT IF EXISTS trips_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trip_requests DROP CONSTRAINT IF EXISTS trip_requests_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.trip_positions DROP CONSTRAINT IF EXISTS trip_positions_pkey;
-ALTER TABLE IF EXISTS rideshare.vehicle_reservations DROP CONSTRAINT IF EXISTS starts_at_less_than_ends_at;
 ALTER TABLE IF EXISTS ONLY rideshare.schema_migrations DROP CONSTRAINT IF EXISTS schema_migrations_pkey;
 ALTER TABLE IF EXISTS ONLY rideshare.vehicle_reservations DROP CONSTRAINT IF EXISTS non_overlapping_vehicle_registration;
 ALTER TABLE IF EXISTS ONLY rideshare.locations DROP CONSTRAINT IF EXISTS locations_pkey;
@@ -431,7 +430,8 @@ CREATE TABLE rideshare.vehicle_reservations (
     starts_at timestamp with time zone NOT NULL,
     ends_at timestamp with time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT starts_at_less_than_ends_at CHECK ((starts_at < ends_at))
 );
 
 
@@ -573,14 +573,6 @@ ALTER TABLE ONLY rideshare.vehicle_reservations
 
 ALTER TABLE ONLY rideshare.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
-
-
---
--- Name: vehicle_reservations starts_at_less_than_ends_at; Type: CHECK CONSTRAINT; Schema: rideshare; Owner: -
---
-
-ALTER TABLE rideshare.vehicle_reservations
-    ADD CONSTRAINT starts_at_less_than_ends_at CHECK ((starts_at < ends_at)) NOT VALID;
 
 
 --
@@ -793,6 +785,7 @@ ALTER TABLE ONLY rideshare.trip_requests
 SET search_path TO rideshare;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260218080051'),
 ('20260218073907'),
 ('20260216094818'),
 ('20260128085515'),
