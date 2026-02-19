@@ -27,6 +27,7 @@ DROP INDEX IF EXISTS rideshare.index_trips_on_driver_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_start_location_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_rider_id;
 DROP INDEX IF EXISTS rideshare.index_trip_requests_on_end_location_id;
+DROP INDEX IF EXISTS rideshare.index_locations_on_city_and_state;
 DROP INDEX IF EXISTS rideshare.index_locations_on_address;
 DROP INDEX IF EXISTS rideshare.index_fast_search_results_on_driver_id;
 ALTER TABLE IF EXISTS ONLY rideshare.vehicles DROP CONSTRAINT IF EXISTS vehicles_pkey;
@@ -231,7 +232,6 @@ CREATE TABLE rideshare.users (
     trips_count integer,
     drivers_license_number character varying(100)
 );
-ALTER TABLE ONLY rideshare.users ALTER COLUMN first_name SET STATISTICS 100;
 
 
 --
@@ -239,13 +239,6 @@ ALTER TABLE ONLY rideshare.users ALTER COLUMN first_name SET STATISTICS 100;
 --
 
 COMMENT ON TABLE rideshare.users IS 'sensitive_fields|first_name:scrub_text,last_name:scrub_text,email:scrub_email';
-
-
---
--- Name: COLUMN users.first_name; Type: COMMENT; Schema: rideshare; Owner: -
---
-
-COMMENT ON COLUMN rideshare.users.first_name IS 'sensitive_data=true';
 
 
 --
@@ -437,7 +430,8 @@ CREATE TABLE rideshare.vehicle_reservations (
     starts_at timestamp with time zone NOT NULL,
     ends_at timestamp with time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT starts_at_less_than_ends_at CHECK ((starts_at < ends_at))
 );
 
 
@@ -644,6 +638,13 @@ CREATE UNIQUE INDEX index_locations_on_address ON rideshare.locations USING btre
 
 
 --
+-- Name: index_locations_on_city_and_state; Type: INDEX; Schema: rideshare; Owner: -
+--
+
+CREATE UNIQUE INDEX index_locations_on_city_and_state ON rideshare.locations USING btree (city, state);
+
+
+--
 -- Name: index_trip_requests_on_end_location_id; Type: INDEX; Schema: rideshare; Owner: -
 --
 
@@ -784,6 +785,9 @@ ALTER TABLE ONLY rideshare.trip_requests
 SET search_path TO rideshare;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260218080051'),
+('20260218073907'),
+('20260216094818'),
 ('20260128085515'),
 ('20231220043547'),
 ('20231218215836'),
