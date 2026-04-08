@@ -49,7 +49,7 @@ module Rideshare
 
     # Enable Query Logging
     # NOTE: Disable in order to use Prepared Statements
-    config.active_record.query_log_tags_enabled = true
+    config.active_record.query_log_tags_enabled = false
 
     # https://www.bigbinary.com/blog/rails-7-adds-setting-for-enumerating-columns-in-select-statements#
     # config.active_record.enumerate_columns_in_select_statements = true
