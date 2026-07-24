@@ -551,3 +551,498 @@ SELECT * FROM pgstattuple('temp.users');
 table_len  | tuple_count | tuple_len  | tuple_percent | dead_tuple_count | dead_tuple_len | dead_tuple_percent | free_space | free_percent 
 -----------+-------------+------------+---------------+------------------+----------------+--------------------+------------+--------------
 1391632384 |    10000000 | 1031756920 |         74.14 |          1001130 |       95863416 |               6.89 |  207255876 |        14.89
+
+-- new day from page 211
+-- removing unused indexes
+
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+\timing
+
+-- make sure track_activities and track_counts are both on
+SHOW track_activities;
+track_activities
+------------------
+on
+(1 row)
+
+Time: 22.980 ms
+
+SHOW track_counts;
+track_counts
+--------------
+on
+(1 row)
+
+Time: 0.887 ms
+
+-- Demo of a HOT update in the users table
+
+-- check the stats before the update of the users table
+SELECT n_live_tup, n_dead_tup, n_tup_upd, n_tup_hot_upd
+FROM pg_stat_user_tables
+WHERE schemaname = 'rideshare' AND relname = 'users';
+ n_live_tup | n_dead_tup | n_tup_upd | n_tup_hot_upd
+------------+------------+-----------+---------------
+   10000900 |          0 |        22 |             0
+(1 row)
+
+Time: 7.197 ms
+
+-- Columns on users that are not part of any index key (HOT-friendly when updated)
+SELECT
+  a.attname AS column_name,
+  format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+WHERE a.attrelid = 'rideshare.users'::regclass
+  AND a.attnum > 0
+  AND NOT a.attisdropped
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_index i
+    CROSS JOIN LATERAL unnest(i.indkey) AS key_attnum
+    WHERE i.indrelid = a.attrelid
+      AND key_attnum <> 0
+      AND a.attnum = key_attnum
+  )
+ORDER BY a.attnum;
+
+-- These are the columns that are not part of any index key
+-- so they are HOT-friendly when updated
+      column_name       |           data_type
+------------------------+--------------------------------
+  created_at            | timestamp(6) without time zone
+  updated_at            | timestamp(6) without time zone
+  password_digest       | character varying
+  trips_count           | integer
+  drivers_license_number| character varying(100)
+(5 rows)
+
+-- let's look at a row in the users table
+SELECT id, first_name, last_name, drivers_license_number FROM users WHERE id = 1920;
+  id  | first_name | last_name | drivers_license_number
+------+------------+-----------+------------------------
+ 1920 | Anya       | Gulgowski | A800000514601919
+(1 row)
+
+-- get the ctid of the row
+SELECT ctid FROM users WHERE id = 1920;
+  ctid
+---------
+  (33,16)
+(1 row)
+
+-- add page_inspect extension
+https://www.postgresql.org/docs/current/pageinspect.html
+
+CREATE EXTENSION IF NOT EXISTS pageinspect;
+-- NOTICE:  extension "pageinspect" already exists, skipping
+-- CREATE EXTENSION
+
+-- pageinspect objects are in public (not a schema named "pageinspect")
+SET search_path TO rideshare, public;
+
+-- See all the tuples on the same page, 33, as the row with id 1920 has.
+SELECT lp, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+
+ lp | lp_len | t_xmin  | t_xmax | t_ctid
+----+--------+---------+--------+---------
+  1 |      0 |         |        |
+  ...
+ 15 |      0 |         |        |
+ 16 |    137 | 4685867 |      0 | (33,16)
+ 17 |    129 | 4685867 |      0 | (33,17)
+ 18 |      0 |         |        |
+ ...
+ 56 |      0 |         |        |
+
+
+-- UPDATE a user value that is not part of any index key
+-- this should be a HOT update
+UPDATE users SET drivers_license_number = '123456789' WHERE id = 1920;
+UPDATE 1
+
+
+-- See if the new tuple is on the same page, 33, as the row with id 1920.
+SELECT lp, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+
+ lp | lp_len | t_xmin  | t_xmax | t_ctid
+----+--------+---------+--------+---------
+  1 |      0 |         |        |
+  ...
+ 15 |      0 |         |        |
+ 16 |    137 | 4685867 | 5736675| (33,57)
+ 17 |    129 | 4685867 |      0 | (33,17)
+ 18 |      0 |         |        |
+ ...
+ 56 |      0 |         |        |
+ 57 |    130 | 5736675 |       0 | (33,57)
+
+
+-- See if the amount of HOT updates has increased
+SELECT n_live_tup, n_dead_tup, n_tup_upd, n_tup_hot_upd
+FROM pg_stat_user_tables
+WHERE schemaname = 'rideshare' AND relname = 'users';
+ n_live_tup | n_dead_tup | n_tup_upd | n_tup_hot_upd
+------------+------------+-----------+---------------
+   10000900 |          1 |        23 |             1
+
+-- Update a value that is part of an index key
+UPDATE users SET first_name = 'Jess' WHERE id = 1920;
+UPDATE 1
+
+-- See if the new tuple is on the same page, 33, as the row with id 1920.
+SELECT lp, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+
+ lp | lp_len | t_xmin  | t_xmax | t_ctid
+----+--------+---------+--------+---------
+  1 |      0 |         |        |
+  ...
+ 15 |      0 |         |        |
+ 16 |    137 | 4685867 | 5736675| (33,57)
+ 17 |    129 | 4685867 |      0 | (33,17)
+ 18 |      0 |         |        |
+ ...
+ 56 |      0 |         |        |
+ 57 |    130 | 5736675 | 5736676 | (33,58)
+ 58 |    130 | 5736676 |       0 | (33,58)
+
+-- update a value that is part of an index key, for fun
+UPDATE users SET last_name = 'Sully' WHERE id = 1920;
+
+SELECT lp, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+
+ lp | lp_len | t_xmin  | t_xmax | t_ctid
+----+--------+---------+--------+---------
+  1 |      0 |         |        |
+  ...
+ 15 |      0 |         |        |
+ 16 |    137 | 4685867 | 5736675| (33,57)
+ 17 |    129 | 4685867 |      0 | (33,17)
+ 18 |      0 |         |        |
+ ...
+ 56 |      0 |         |        |
+ 57 |    130 | 5736675 | 5736676 | (33,58)
+ 58 |    130 | 5736676 | 5736677 | (33,59)
+ 59 |    122 | 5736677 |       0 | (33,59)
+
+-- Do another HOT 🔥 update cause why not
+UPDATE users SET drivers_license_number = '987654321' WHERE id = 1920;
+UPDATE 1
+
+-- See what the page looks like now
+SELECT lp, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+ lp | lp_len | t_xmin  | t_xmax | t_ctid
+----+--------+---------+--------+---------
+  1 |      0 |         |        |
+  ...
+ 15 |      0 |         |        |
+ 16 |    137 | 4685867 | 5736675| (33,16)
+ 17 |    129 | 4685867 |      0 | (33,17)
+ 18 |      0 |         |        |
+ ...
+ 56 |      0 |         |        |
+ 57 |    130 | 5736675 | 5736676 | (33,58)
+ 58 |    130 | 5736676 | 5736677 | (33,59)
+ 59 |    122 | 5736677 | 5736678 | (33,60)
+ 60 |    122 | 5736678 |       0 | (33,60)
+
+-- See if the amount of HOT updates has increased
+SELECT n_live_tup, n_dead_tup, n_tup_upd, n_tup_hot_upd
+FROM pg_stat_user_tables
+WHERE schemaname = 'rideshare' AND relname = 'users';
+ n_live_tup | n_dead_tup | n_tup_upd | n_tup_hot_upd
+------------+------------+-----------+---------------
+   10000900 |          4 |        26 |             2
+
+
+
+SELECT ctid, xmin, xmax, id, first_name, last_name, drivers_license_number
+FROM users
+WHERE id = 1920;
+  ctid   |  xmin   | xmax |  id  | first_name | last_name | drivers_license_number
+---------+---------+------+------+------------+-----------+------------------------
+ (33,60) | 5736677 |    0 | 1920 | Jess       | Sully     | 987654321
+(1 row)
+
+-- remove the email index on users, concurrently
+DROP INDEX CONCURRENTLY IF EXISTS index_users_on_email;
+
+-- new day from page 213
+-- Pruning Duplicate and Overlapping Indexes
+
+-- create a single column index on the first name column
+CREATE INDEX idx_first_name ON users (first_name);
+
+-- create a composite index on the first name and last name columns
+CREATE INDEX idx_first_name_last_name ON users (first_name, last_name);
+
+
+-- create unique index on the first name column
+CREATE UNIQUE INDEX idx_first_name_unique ON users (first_name);
+
+-- create a single column index on the first name column for drivers
+CREATE INDEX idx_first_name_of_drivers ON users (first_name) WHERE type = 'Driver';
+
+-- create an expression index on the first name column in lowercase
+CREATE INDEX idx_first_name_lower ON users (lower(first_name));
+
+-- create a covering index on the last name and first name columns
+CREATE INDEX idx_last_name_first_name_covering ON users (last_name, first_name) INCLUDE (email);
+
+
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+\timing
+
+-- create a single column index on the first name column
+-- this will be a duplicate index
+CREATE INDEX idx_first_name ON users (first_name);
+
+-- start a rails server and see the duplicate via the link below
+http://localhost:3000/pghero
+
+-- in a ruby console, use PgHero's .duplicate_indexes() to find duplicate and overlapping indexes
+PgHero.duplicate_indexes
+[{:unneeded_index=>
+   {:schema=>"rideshare",
+    :table=>"users",
+    :name=>"idx_first_name",
+    :columns=>["first_name"],
+    :using=>"btree",
+    :unique=>false,
+    :primary=>false,
+    :valid=>true,
+    :indexprs=>nil,
+    :indpred=>nil,
+    :definition=>"CREATE INDEX idx_first_name ON rideshare.users USING btree (first_name)"},
+  :covering_index=>
+   {:schema=>"rideshare",
+    :table=>"users",
+    :name=>"users_fname_lname_multi_idx",
+    :columns=>["first_name", "last_name"],
+    :using=>"btree",
+    :unique=>false,
+    :primary=>false,
+    :valid=>true,
+    :indexprs=>nil,
+    :indpred=>nil,
+    :definition=>
+     "CREATE INDEX users_fname_lname_multi_idx ON rideshare.users USING btree (first_name, last_name)"}}]
+
+
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+SET search_path TO rideshare, public;
+
+\timing
+CREATE EXTENSION IF NOT EXISTS pgstattuple;
+SELECT * FROM pgstattuple('rideshare.users');
+ table_len  | tuple_count | tuple_len  | tuple_percent | dead_tuple_count | dead_tuple_len | dead_tuple_percent | free_space | free_percent 
+------------+-------------+------------+---------------+------------------+----------------+--------------------+------------+--------------
+ 1209704448 |    10000900 | 1156078148 |         95.57 |                4 |            519 |                  0 |    9456832 |         0.78
+
+
+SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
+  (tblpages-est_tblpages)*bs AS extra_size,
+  CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
+    THEN 100 * (tblpages - est_tblpages)/tblpages::float
+    ELSE 0
+  END AS extra_pct, fillfactor,
+  CASE WHEN tblpages - est_tblpages_ff > 0
+    THEN (tblpages-est_tblpages_ff)*bs
+    ELSE 0
+  END AS bloat_size,
+  CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
+    THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
+    ELSE 0
+  END AS bloat_pct, is_na
+  -- , tpl_hdr_size, tpl_data_size, (pst).free_percent + (pst).dead_tuple_percent AS real_frag -- (DEBUG INFO)
+FROM (
+  SELECT ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_tblpages,
+    ceil( reltuples / ( (bs-page_hdr)*fillfactor/(tpl_size*100) ) ) + ceil( toasttuples / 4 ) AS est_tblpages_ff,
+    tblpages, fillfactor, bs, tblid, schemaname, tblname, heappages, toastpages, is_na
+    -- , tpl_hdr_size, tpl_data_size, pgstattuple(tblid) AS pst -- (DEBUG INFO)
+  FROM (
+    SELECT
+      ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
+        - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
+        - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+      ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + toastpages) AS tblpages, heappages,
+      toastpages, reltuples, toasttuples, bs, page_hdr, tblid, schemaname, tblname, fillfactor, is_na
+      -- , tpl_hdr_size, tpl_data_size
+    FROM (
+      SELECT
+        tbl.oid AS tblid, ns.nspname AS schemaname, tbl.relname AS tblname, tbl.reltuples,
+        tbl.relpages AS heappages, coalesce(toast.relpages, 0) AS toastpages,
+        coalesce(toast.reltuples, 0) AS toasttuples,
+        coalesce(substring(
+          array_to_string(tbl.reloptions, ' ')
+          FROM 'fillfactor=([0-9]+)')::smallint, 100) AS fillfactor,
+        current_setting('block_size')::numeric AS bs,
+        CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
+        24 AS page_hdr,
+        23 + CASE WHEN MAX(coalesce(s.null_frac,0)) > 0 THEN ( 7 + count(s.attname) ) / 8 ELSE 0::int END
+           + CASE WHEN bool_or(att.attname = 'oid' and att.attnum < 0) THEN 4 ELSE 0 END AS tpl_hdr_size,
+        sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 0) ) AS tpl_data_size,
+        bool_or(att.atttypid = 'pg_catalog.name'::regtype)
+          OR sum(CASE WHEN att.attnum > 0 THEN 1 ELSE 0 END) <> count(s.attname) AS is_na
+      FROM pg_attribute AS att
+        JOIN pg_class AS tbl ON att.attrelid = tbl.oid
+        JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+        LEFT JOIN pg_stats AS s ON s.schemaname=ns.nspname
+          AND s.tablename = tbl.relname AND s.inherited=false AND s.attname=att.attname
+        LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
+      WHERE NOT att.attisdropped
+        AND tbl.relkind in ('r','m')
+      GROUP BY 1,2,3,4,5,6,7,8,9,10
+      ORDER BY 2,3
+    ) AS s
+  ) AS s2
+) AS s3
+-- WHERE NOT is_na
+--   AND tblpages*((pst).free_percent + (pst).dead_tuple_percent)::float4/100 >= 1
+-- make this change to run the query for the temp users table
+WHERE schemaname = 'rideshare' AND tblname = 'users'
+ORDER BY schemaname, tblname;
+
+   current_database    | schemaname | tblname | real_size  | extra_size |     extra_pct     | fillfactor | bloat_size |     bloat_pct     | is_na 
+-----------------------+------------+---------+------------+------------+-------------------+------------+------------+-------------------+-------
+ rideshare_development | rideshare  | users   | 1209704448 |   56213504 | 4.646879168952184 |        100 |   56213504 | 4.646879168952184 | f
+(1 row)
+
+-- See what the page looks like with lp_flags
+SELECT lp, lp_len, lp_flags, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+ lp | lp_len | lp_flags | t_xmin  | t_xmax  | t_ctid  
+----+--------+----------+---------+---------+---------
+  1 |      0 |        3 |         |         | 
+...
+ 15 |      0 |        3 |         |         | 
+ 16 |    137 |        1 | 4685867 | 5736675 | (33,57)
+ 17 |    129 |        1 | 4685867 |       0 | (33,17)
+ 18 |      0 |        3 |         |         | 
+...
+ 56 |      0 |        3 |         |         | 
+ 57 |    130 |        1 | 5736675 | 5736676 | (33,58)
+ 58 |    130 |        1 | 5736676 | 5736677 | (33,59)
+ 59 |    122 |        1 | 5736677 | 5736678 | (33,60)
+ 60 |    122 |        1 | 5736678 |       0 | (33,60)
+(60 rows)
+
+Value	State	Reusable for a new row?
+0
+LP_UNUSED
+Yes — immediately
+1
+LP_NORMAL
+No — live tuple (slots 16, 17, 57–60)
+2
+LP_REDIRECT
+No — HOT redirect anchor
+3
+LP_DEAD
+No — not until VACUUM cleans it
+
+-- only vacuum the users table, not full, to see what happens
+VACUUM (VERBOSE) rideshare.users;
+
+INFO:  vacuuming "rideshare_development.rideshare.users"
+INFO:  launched 2 parallel vacuum workers for index cleanup (planned: 2)
+INFO:  finished vacuuming "rideshare_development.rideshare.users": index scans: 0
+pages: 0 removed, 147669 remain, 334 scanned (0.23% of total)
+tuples: 4 removed, 10000900 remain, 0 are dead but not yet removable
+removable cutoff: 5739538, which was 0 XIDs old when operation ended
+new relfrozenxid: 5739538, which is 13947 XIDs ahead of previous value
+new relminmxid: 218102, which is 1045 MXIDs ahead of previous value
+frozen: 1 pages from table (0.00% of total) had 1 tuples frozen
+index scan bypassed: 334 pages from table (0.23% of total) have 19326 dead item identifiers
+avg read rate: 29.936 MB/s, avg write rate: 0.229 MB/s
+buffer usage: 276 hits, 262 misses, 2 dirtied
+WAL usage: 3 records, 2 full page images, 7808 bytes
+system usage: CPU: user: 0.00 s, system: 0.02 s, elapsed: 0.06 s
+INFO:  vacuuming "rideshare_development.pg_toast.pg_toast_5035007"
+INFO:  finished vacuuming "rideshare_development.pg_toast.pg_toast_5035007": index scans: 0
+pages: 0 removed, 0 remain, 0 scanned (100.00% of total)
+tuples: 0 removed, 0 remain, 0 are dead but not yet removable
+removable cutoff: 5739538, which was 0 XIDs old when operation ended
+new relfrozenxid: 5739538, which is 13947 XIDs ahead of previous value
+new relminmxid: 218102, which is 1045 MXIDs ahead of previous value
+frozen: 0 pages from table (100.00% of total) had 0 tuples frozen
+index scan not needed: 0 pages from table (100.00% of total) had 0 dead item identifiers removed
+avg read rate: 11.784 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 21 hits, 1 misses, 0 dirtied
+WAL usage: 1 records, 0 full page images, 188 bytes
+system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+VACUUM
+
+
+-- see the page looks like now
+rideshare_development=# SELECT lp, lp_len, lp_flags, lp_off, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+ lp | lp_len | lp_flags | lp_off | t_xmin  | t_xmax | t_ctid  
+----+--------+----------+--------+---------+--------+---------
+  1 |      0 |        3 |      0 |         |        | 
+...
+ 15 |      0 |        3 |      0 |         |        | 
+ 16 |      0 |        3 |      0 |         |        | 
+ 17 |    129 |        1 |   8056 | 4685867 |      0 | (33,17)
+ 18 |      0 |        3 |      0 |         |        | 
+...
+ 56 |      0 |        3 |      0 |         |        | 
+ 57 |      0 |        0 |      0 |         |        | 
+ 58 |      0 |        3 |      0 |         |        | 
+ 59 |      0 |        2 |     60 |         |        | 
+ 60 |    122 |        1 |   7928 | 5736678 |      0 | (33,60)
+(60 rows)
+
+-- Force index cleanup on
+VACUUM (VERBOSE, INDEX_CLEANUP ON) rideshare.users;
+INFO:  vacuuming "rideshare_development.rideshare.users"
+INFO:  launched 2 parallel vacuum workers for index vacuuming (planned: 2)
+INFO:  finished vacuuming "rideshare_development.rideshare.users": index scans: 1
+pages: 0 removed, 147669 remain, 334 scanned (0.23% of total)
+tuples: 0 removed, 10000900 remain, 0 are dead but not yet removable
+removable cutoff: 5739538, which was 0 XIDs old when operation ended
+frozen: 0 pages from table (0.00% of total) had 0 tuples frozen
+index scan needed: 334 pages from table (0.23% of total) had 19326 dead item identifiers removed
+index "users_pkey": pages: 27476 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "index_users_on_email": pages: 95783 in total, 8 newly deleted, 8 currently deleted, 0 reusable
+index "index_users_on_type": pages: 7891 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "index_users_on_last_name_and_email": pages: 124683 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "index_users_deleted_email_multi": pages: 65915 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "index_users_deleted_email_partial": pages: 2 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "users_fname_lname_multi_idx": pages: 59548 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "users_fname_include_lname_incl": pages: 59471 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "idx_first_name_lower": pages: 38508 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+index "idx_first_name": pages: 38508 in total, 0 newly deleted, 0 currently deleted, 0 reusable
+avg read rate: 1091.896 MB/s, avg write rate: 2.151 MB/s
+buffer usage: 787 hits, 518162 misses, 1021 dirtied
+WAL usage: 1356 records, 1009 full page images, 673333 bytes
+system usage: CPU: user: 0.96 s, system: 0.64 s, elapsed: 3.70 s
+INFO:  vacuuming "rideshare_development.pg_toast.pg_toast_5035007"
+INFO:  finished vacuuming "rideshare_development.pg_toast.pg_toast_5035007": index scans: 0
+pages: 0 removed, 0 remain, 0 scanned (100.00% of total)
+tuples: 0 removed, 0 remain, 0 are dead but not yet removable
+removable cutoff: 5739538, which was 0 XIDs old when operation ended
+frozen: 0 pages from table (100.00% of total) had 0 tuples frozen
+index scan not needed: 0 pages from table (100.00% of total) had 0 dead item identifiers removed
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 6 hits, 0 misses, 0 dirtied
+WAL usage: 0 records, 0 full page images, 0 bytes
+system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+VACUUM
+
+rideshare_development=# SELECT lp, lp_len, lp_flags, lp_off, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page('rideshare.users', 33));
+ lp | lp_len | lp_flags | lp_off | t_xmin  | t_xmax | t_ctid
+----+--------+----------+--------+---------+--------+---------
+  1 |      0 |        0 |      0 |         |        |
+...
+ 16 |      0 |        0 |      0 |         |        |
+ 17 |    129 |        1 |   8056 | 4685867 |      0 | (33,17)
+ 18 |      0 |        0 |      0 |         |        |
+...
+ 56 |      0 |        0 |      0 |         |        |
+ 57 |      0 |        0 |      0 |         |        |
+ 58 |      0 |        0 |      0 |         |        |
+ 59 |      0 |        2 |     60 |         |        |
+ 60 |    122 |        1 |   7928 | 5736678 |      0 | (33,60)
+(60 rows)
