@@ -1046,3 +1046,196 @@ rideshare_development=# SELECT lp, lp_len, lp_flags, lp_off, t_xmin, t_xmax, t_c
  59 |      0 |        2 |     60 |         |        |
  60 |    122 |        1 |   7928 | 5736678 |      0 | (33,60)
 (60 rows)
+
+
+-- new day from page 214
+-- Removing Indexes on Insert-Only Tables
+
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+\timing
+
+-- count Data Manipulation Language (DML) operations for a table
+SELECT
+  relname,
+  n_tup_ins,
+  n_tup_upd,
+  n_tup_del
+FROM pg_stat_user_tables
+WHERE relname = 'trip_positions';
+
+    relname     | n_tup_ins | n_tup_upd | n_tup_del
+----------------+-----------+-----------+-----------
+ trip_positions |   5270401 |         0 |         0
+(1 row)
+
+-- count Data Manipulation Language (DML) operations for all tables
+SELECT
+  schemaname,
+  relname,
+  n_tup_ins,
+  n_tup_upd,
+  n_tup_del
+FROM pg_stat_user_tables
+ORDER BY n_tup_ins DESC;
+
+ schemaname |       relname        | n_tup_ins | n_tup_upd | n_tup_del
+------------+----------------------+-----------+-----------+-----------
+ rideshare  | trip_positions       |   5270401 |         0 |         0
+ rideshare  | users                |         2 |        26 |     19301
+ hint_plan  | hints                |         0 |         0 |         0
+ rideshare  | trip_requests        |         0 |         0 |         0
+ rideshare  | vehicles             |         0 |         0 |         0
+ rideshare  | ar_internal_metadata |         0 |         0 |         0
+ rideshare  | trips                |         0 |      2020 |         2
+ rideshare  | locations            |         0 |         0 |         0
+ rideshare  | fast_search_results  |         0 |         0 |         0
+ rideshare  | schema_migrations    |         0 |         0 |         0
+ rideshare  | vehicle_reservations |         0 |         0 |         0
+(11 rows)
+
+
+-- new day from page 215
+-- Scheduling Jobs Using pg_cron
+
+-- install pg_cron
+git clone https://github.com/citusdata/pg_cron.git
+cd pg_cron
+make clean
+PG_LDFLAGS="-lintl" make install
+
+-- add these to the postgresql.conf file
+shared_preload_libraries = 'pg_cron'
+cron.database_name = 'rideshare_development'
+
+-- restart the postgresql service to apply the changes
+brew services restart postgresql@16
+
+-- start a new psql session, as a superuser (which is what I always do...)
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+
+-- create the extension
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE
+
+-- give owner role access to the cron schema
+GRANT USAGE ON SCHEMA cron TO owner;
+ERROR:  role "owner" does not exist
+
+-- from a terminal, run the following command to create the owner role
+export RIDESHARE_DB_PASSWORD=$(openssl rand -hex 12)
+export DB_URL='postgres://postgres:@localhost:5432/postgres'
+sh db/setup.sh
+
+-- back to my psql session, as a superuser
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+
+-- give owner role access to the cron schema, again
+GRANT USAGE ON SCHEMA cron TO owner;
+GRANT
+
+-- open a psql session as the owner role
+psql -U owner -d rideshare_development
+psql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: FATAL:  permission denied for database "rideshare_development"
+DETAIL:  User does not have CONNECT privilege.
+
+ALTER DATABASE rideshare_development OWNER TO owner;
+GRANT CONNECT, TEMPORARY ON DATABASE rideshare_development TO owner;
+GRANT USAGE ON SCHEMA cron TO owner;
+
+-- open a psql session as the owner role, again
+psql -U owner -d rideshare_development
+rideshare_development=>
+
+-- schedule a job to run VACUUM ANALYZE on the trips table
+-- every hour on the 10 minute mark
+SELECT cron.schedule(
+  'rideshare trips manual vacuum',
+  '10 * * * *',
+  'VACUUM (ANALYZE) rideshare.trips'
+);
+
+ schedule
+----------
+        1
+(1 row)
+
+-- view the job scheduled to run
+SELECT * FROM cron.job ORDER BY jobid;
+ jobid |  schedule  |             command              | nodename  | nodeport |       database        | username | active |            jobname
+-------+------------+----------------------------------+-----------+----------+-----------------------+----------+--------+-------------------------------
+     1 | 10 * * * * | VACUUM (ANALYZE) rideshare.trips | localhost |     5432 | rideshare_development | owner    | t      | rideshare trips manual vacuum
+(1 row)
+
+-- new day from bottom of page 216
+
+-- login in as a superuser
+psql -U postgres -d rideshare_development
+SET search_path TO rideshare;
+
+-- alter the job to run every minute
+SELECT cron.alter_job(job_id:=1,schedule:='* * * * *');
+ alter_job
+-----------
+
+(1 row)
+
+-- see all the job run details
+SELECT * FROM cron.job_run_details;
+
+ jobid | runid | job_pid |       database        | username |             command              |  status   | return_message |          start_time           |           end_time
+-------+-------+---------+-----------------------+----------+----------------------------------+-----------+----------------+-------------------------------+-------------------------------
+     1 |     1 |   10135 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 10:10:00.365219+01 | 2026-07-28 10:10:00.395866+01
+     1 |     2 |   13693 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 11:10:00.067748+01 | 2026-07-28 11:10:00.074637+01
+     1 |     3 |   46888 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 12:10:00.09787+01  | 2026-07-28 12:10:00.108592+01
+     1 |     4 |   54945 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 13:10:00.285174+01 | 2026-07-28 13:10:00.318804+01
+     1 |     5 |   96943 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 14:10:00.033014+01 | 2026-07-28 14:10:00.043054+01
+     1 |     6 |   80006 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 15:10:00.02992+01  | 2026-07-28 15:10:00.03842+01
+     1 |     7 |   44861 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 16:10:00.073862+01 | 2026-07-28 16:10:00.079655+01
+     1 |     8 |    6356 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 17:10:00.047497+01 | 2026-07-28 17:10:00.055367+01
+     1 |     9 |    8104 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:10:00.077605+01 | 2026-07-29 07:10:00.098826+01
+     1 |    10 |   48226 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:23:00.193842+01 | 2026-07-29 07:23:00.205759+01
+     1 |    11 |   48422 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:24:00.033364+01 | 2026-07-29 07:24:00.043612+01
+(10 rows)
+
+
+-- Actually schedule the job every 10 minutes
+SELECT cron.schedule(
+  'rideshare trips manual vacuum',
+  '*/10 * * * *',
+  'VACUUM (ANALYZE) rideshare.trips'
+);
+
+-- alter the job to run every 10 minutes
+SELECT cron.alter_job(job_id:=1,schedule:='*/10 * * * *');
+ alter_job
+-----------
+
+(1 row)
+
+-- see all the job run details and order by runid
+SELECT * FROM cron.job_run_details ORDER BY runid;
+
+ jobid | runid | job_pid |       database        | username |             command              |  status   | return_message |          start_time           |           end_time
+-------+-------+---------+-----------------------+----------+----------------------------------+-----------+----------------+-------------------------------+-------------------------------
+     1 |     1 |   10135 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 10:10:00.365219+01 | 2026-07-28 10:10:00.395866+01
+     1 |     2 |   13693 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-28 11:10:00.067748+01 | 2026-07-28 11:10:00.074637+01
+...
+     1 |    21 |   53691 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:34:00.035835+01 | 2026-07-29 07:34:00.040205+01
+     1 |    22 |   53756 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:35:00.031312+01 | 2026-07-29 07:35:00.041633+01
+     1 |    23 |   56543 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:40:00.061174+01 | 2026-07-29 07:40:00.066352+01
+     1 |    24 |   67148 | rideshare_development | owner    | VACUUM (ANALYZE) rideshare.trips | succeeded | VACUUM         | 2026-07-29 07:50:00.094618+01 | 2026-07-29 07:50:00.111225+01
+
+
+
+-- check the timestamps for manual ANALYZE and VACUUM runs
+SELECT schemaname, relname, last_analyze, last_vacuum
+FROM pg_stat_all_tables
+where relname = 'trips';
+
+ schemaname | relname |         last_analyze          |          last_vacuum
+------------+---------+-------------------------------+-------------------------------
+ rideshare  | trips   | 2026-07-29 07:50:00.110468+01 | 2026-07-29 07:50:00.10552+01
+(1 row)
