@@ -523,3 +523,387 @@ SELECT COUNT(*) FROM rideshare.users;
  rideshare          | vehicle_reservations     | table       | scan
  rideshare          | vehicles                 | table       | scan
  temp               | list_items               | table       | scan
+
+
+-- new day from page 274, populating table data with \COPY
+
+-- make the database smaller before we start copying data 
+bin/rails db:reset && bin/rails data_generators:generate_all
+-- db/teardown.sh
+-- ERROR:  database "rideshare_development" is being accessed by other users
+-- DETAIL:  There is 1 other session using the database.
+-- DROP DATABASE
+-- -- Reverse all the DEFAULT PRIVILEGES ....or
+-- -- https://stackoverflow.com/a/54078230/126688
+-- -- Simpler solution:
+-- -- https://dba.stackexchange.com/a/155356/272968
+-- REASSIGN OWNED BY owner TO postgres;
+-- REASSIGN OWNED
+-- DROP OWNED BY owner;
+-- DROP OWNED
+-- ERROR:  role "owner" cannot be dropped because some objects depend on it
+-- DETAIL:  8 objects in database rideshare_development
+-- ERROR:  role "readwrite_users" cannot be dropped because some objects depend on it
+-- DETAIL:  privileges for database rideshare_development
+-- 5 objects in database rideshare_development
+-- ERROR:  role "readonly_users" cannot be dropped because some objects depend on it
+-- DETAIL:  privileges for database rideshare_development
+-- 5 objects in database rideshare_development
+-- DROP ROLE
+-- ERROR:  role "app_readonly" cannot be dropped because some objects depend on it
+-- DETAIL:  privileges for database rideshare_development
+-- 39 objects in database rideshare_development
+-- 2 objects in database temp_restore
+-- bin/rails aborted!
+-- Command failed with status (1): [db/teardown.sh]
+-- /Users/scan/projects/rideshare/lib/tasks/custom.rake:10:in `block (2 levels) in <top (required)>'
+-- /Users/scan/projects/rideshare/Rakefile:15:in `block (2 levels) in <top (required)>'
+-- Tasks: TOP => custom:db_reset
+-- (See full trace by running task with --trace)
+
+
+-- bin/rails db:reset is the right command. It is failing because teardown cannot drop rideshare_development while pg_cron is connected to it, so the later DROP ROLE steps never get a clean cluster.
+
+-- Two leftovers from earlier chapter work are in the way:
+
+-- pg_cron is attached to rideshare_development (cron.database_name = 'rideshare_development'). That is the “1 other session” blocking DROP DATABASE.
+-- temp_restore from the chapter 12 dump/restore still has grants to app_readonly. db/teardown.sh never drops that database, so even a successful drop of rideshare_development would still leave that role behind.
+-- custom:db_reset runs db/teardown.sh first and aborts if that script exits non-zero, so db/setup.sh never runs.
+
+-- Do this in order, then rerun reset.
+
+-- 1. Move pg_cron off the app database
+
+psql postgres://postgres:@localhost:5432/rideshare_development
+
+DROP EXTENSION IF EXISTS pg_cron CASCADE;
+-- DROP EXTENSION
+ALTER SYSTEM SET cron.database_name = 'postgres';
+-- ALTER SYSTEM
+SELECT pg_reload_conf();
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+-- 2. Drop the leftover restore database
+psql postgres://postgres:@localhost:5432/postgres -c "DROP DATABASE IF EXISTS temp_restore;"
+-- DROP DATABASE
+
+
+brew services restart postgresql@16 
+
+-- 3. Confirm nothing is still attached
+psql postgres://postgres:@localhost:5432/postgres 
+SELECT pid, datname, usename, application_name
+FROM pg_stat_activity
+WHERE datname IN ('rideshare_development', 'temp_restore');
+ pid | datname | usename | application_name 
+-----+---------+---------+------------------
+(0 rows)
+
+-- try to reset again, new error unlocked!
+bin/rails db:reset
+-- db/teardown.sh
+-- DROP DATABASE
+-- NOTICE:  database "rideshare_test" does not exist, skipping
+-- DROP DATABASE
+-- -- Reverse all the DEFAULT PRIVILEGES ....or
+-- -- https://stackoverflow.com/a/54078230/126688
+-- -- Simpler solution:
+-- -- https://dba.stackexchange.com/a/155356/272968
+-- REASSIGN OWNED BY owner TO postgres;
+-- REASSIGN OWNED
+-- DROP OWNED BY owner;
+-- DROP OWNED
+-- DROP ROLE
+-- DROP ROLE
+-- DROP ROLE
+-- NOTICE:  role "app" does not exist, skipping
+-- DROP ROLE
+-- DROP ROLE
+-- db/setup.sh
+-- Error: 'RIDESHARE_DB_PASSWORD' not set, can't continue.
+
+-- Check for an existing value in file: ~/.pgpass
+-- If there's a value, set it like this:
+-- export RIDESHARE_DB_PASSWORD="HSnDDgFtyW9fyFI"
+-- OR generate a new value (See comments in: db/setup.sh)
+-- bin/rails aborted!
+-- Command failed with status (1): [db/setup.sh]
+-- /Users/scan/projects/rideshare/lib/tasks/custom.rake:11:in `block (2 levels) in <top (required)>'
+-- /Users/scan/projects/rideshare/Rakefile:15:in `block (2 levels) in <top (required)>'
+-- Tasks: TOP => custom:db_reset
+-- (See full trace by running task with --trace)
+
+export RIDESHARE_DB_PASSWORD="$(awk -F: '/localhost:5432:rideshare_development:owner:/ {print $NF; exit}' ~/.pgpass)"
+export DB_URL='postgres://postgres:@localhost:5432/postgres'
+
+echo "$RIDESHARE_DB_PASSWORD"   # confirm it is non-empty
+-- it outputted the password
+
+echo "$DB_URL"
+-- postgres://postgres:@localhost:5432/postgres
+
+bin/rails db:reset
+-- worked!! to much output to copy and paste here
+-- Loading application environment...
+-- Loading code in search of Active Record models...
+-- Generating Entity-Relationship Diagram for 12 models...
+-- Done! Saved diagram to ./erd.pdf
+
+-- and the second part of the OG command
+bin/rails data_generators:generate_all
+-- also worked
+
+-- dump data with the \COPY command
+bin/rails dbconsole
+\COPY rideshare.users TO '/tmp/users_dump.csv'
+-- COPY 20210
+-- how many rows were copied copied to the file
+
+-- in the terminal,check the size of the file
+du -h /tmp/users_dump.csv
+-- 3.1M    /tmp/users_dump.csv
+
+-- use a query to only dump a filtered set of data
+SET search_path TO rideshare;
+
+CREATE VIEW v1 AS (
+  SELECT *
+  FROM rideshare.users
+  ORDER BY RANDOM()
+  LIMIT (SELECT COUNT(*)/2 FROM rideshare.users)
+);
+-- CREATE VIEW
+
+\COPY (SELECT * FROM v1) TO '/tmp/users_dump_filtered.csv';
+-- COPY 10105
+-- half as many as the first time
+
+DROP VIEW v1;
+-- DROP VIEW
+
+-- in the terminal,check the size of the file
+du -h /tmp/users_dump_filtered.csv
+-- 2.1M    /tmp/users_dump_filtered.csv, not quite half, but less..
+
+-- carry on from last paragraph of 275
+-- https://github.com/awesomedata/awesome-public-datasets
+
+mv ~/Downloads/uber-raw-data-aug14.csv /tmp/uber-raw-data-aug14.csv
+
+-- create the trip_pickus table using the same temp_restore database
+-- (but I think I deleted this table when I re-did the data smaller)
+bin/rails dbconsole
+
+\c temp_restore
+-- connection to server on socket "/tmp/.s.PGSQL.5432" failed: FATAL:  database "temp_restore" does not exist
+-- Previous connection kept
+
+CREATE DATABASE temp_restore;
+-- CREATE DATABASE
+
+\c temp_restore
+-- You are now connected to database "temp_restore" as user "scan".
+
+CREATE UNLOGGED TABLE trip_pickups (
+  time TIMESTAMP WITHOUT TIME ZONE,
+  lat NUMERIC(15,10),
+  lon NUMERIC(15,10),
+  base_code VARCHAR(10)
+);
+-- CREATE TABLE
+
+-- make sure I can access the file
+SELECT PG_STAT_FILE('/tmp/uber-raw-data-aug14.csv');
+                                       pg_stat_file                                       
+------------------------------------------------------------------------------------------
+ (38324585,"2026-10-22 08:06:09+01","2026-10-22 08:03:56+01","2026-10-22 08:10:31+01",,f)
+(1 row)
+
+-- use COPY FROM instead of COPY TO since I already have the file
+COPY trip_pickups
+FROM '/tmp/uber-raw-data-aug14.csv'
+CSV HEADER;
+-- COPY 829275
+-- how many rows were created
+
+
+\d trip_pickups
+                   Unlogged table "public.trip_pickups"
+  Column   |            Type             | Collation | Nullable | Default 
+-----------+-----------------------------+-----------+----------+---------
+ time      | timestamp without time zone |           |          | 
+ lat       | numeric(15,10)              |           |          | 
+ lon       | numeric(15,10)              |           |          | 
+ base_code | character varying(10)       |           |          | 
+
+SELECT * FROM trip_pickups LIMIT 4;
+        time         |      lat      |      lon       | base_code 
+---------------------+---------------+----------------+-----------
+ 2014-08-01 00:03:00 | 40.7366000000 | -73.9906000000 | B02512
+ 2014-08-01 00:09:00 | 40.7260000000 | -73.9918000000 | B02512
+ 2014-08-01 00:12:00 | 40.7209000000 | -74.0507000000 | B02512
+ 2014-08-01 00:12:00 | 40.7387000000 | -73.9856000000 | B02512
+(4 rows)
+
+\timing
+-- Timing is on.
+
+-- combining COPY and CREATE TABLE in the same transaction is even faster!
+DROP TABLE trip_pickups;
+-- DROP TABLE
+
+BEGIN;
+CREATE UNLOGGED TABLE trip_pickups (
+  time TIMESTAMP WITHOUT TIME ZONE,
+  lat NUMERIC(15,10),
+  lon NUMERIC(15,10),
+  base_code VARCHAR(10)
+);
+COPY trip_pickups
+FROM '/tmp/uber-raw-data-aug14.csv'
+CSV HEADER;
+COMMIT;
+-- BEGIN
+-- Time: 0.958 ms
+-- CREATE TABLE
+-- Time: 1.418 ms
+-- COPY 829275
+-- Time: 637.488 ms
+-- COMMIT
+-- Time: 0.405 ms
+
+-- This feels like a very handy thing to be able to do!!!!!
+
+-- new day from page 278
+-- Creating a File Foreign Data Wrapper (FDW)
+
+-- make these changes in postgres.conf
+log_destination = 'stderr,csvlog'		# Valid values are combinations of
+logging_collector = on		# Enable capturing of stderr, jsonlog,
+
+-- restart postgres
+brew services restart postgresql@16
+
+bin/rails dbconsole
+\c temp_restore
+
+SHOW config_file;
+                   config_file                   
+-------------------------------------------------
+ /opt/homebrew/var/postgresql@16/postgresql.conf
+(1 row)
+
+SHOW data_directory;
+         data_directory          
+---------------------------------
+ /opt/homebrew/var/postgresql@16
+(1 row)
+
+-- List .csv files in log directory, then copy to /tmp:
+-- in the terminal, not the dbconsole
+ls -lt "/opt/homebrew/var/postgresql@16/log/"*.csv
+-rw-------@ 1 scan  admin  1773 Oct 23 07:42 /opt/homebrew/var/postgresql@16/log/postgresql-2026-10-23_073745.csv
+
+cp "/opt/homebrew/var/postgresql@16/log/"*.csv /tmp/pglog.csv
+
+-- back in the dbconsole
+\timing
+SELECT * FROM pg_stat_file('/tmp/pglog.csv') LIMIT 10;
+
+ size |         access         |      modification      |         change         | creation | isdir 
+------+------------------------+------------------------+------------------------+----------+-------
+ 1773 | 2026-10-23 07:50:06+01 | 2026-10-23 07:50:06+01 | 2026-10-23 07:50:06+01 |          | f
+(1 row)
+
+-- looks good!
+
+-- Enable the file_fdw extension, and create a SERVER object:
+CREATE EXTENSION IF NOT EXISTS file_fdw;
+-- CREATE EXTENSION
+
+CREATE SERVER file_server
+FOREIGN DATA WRAPPER file_fdw;
+-- CREATE SERVER
+
+-- create the pglog table using CREATE FOREIGN TABLE
+-- it uses the file_server SERVER object we created earlier
+SELECT PG_STAT_FILE('/tmp/pglog.csv');
+                                     pg_stat_file                                     
+--------------------------------------------------------------------------------------
+ (1773,"2026-10-23 07:50:06+01","2026-10-23 07:50:06+01","2026-10-23 07:50:06+01",,f)
+(1 row)
+
+CREATE FOREIGN TABLE pglog (
+  log_time TIMESTAMP(3) WITH TIME ZONE,
+  user_name TEXT,
+  database_name TEXT,
+  process_id INTEGER,
+  connection_from TEXT,
+  session_id TEXT,
+  session_line_num BIGINT,
+  command_tag TEXT,
+  session_start_time TIMESTAMP WITH TIME ZONE,
+  virtual_transaction_id TEXT,
+  transaction_id BIGINT,
+  error_severity TEXT,
+  sql_state_code TEXT,
+  message TEXT,
+  detail TEXT,
+  hint TEXT,
+  internal_query TEXT,
+  internal_query_pos INTEGER,
+  context TEXT,
+  query TEXT,
+  query_pos INTEGER,
+  location TEXT,
+  application_name TEXT,
+  backend_type TEXT,
+  leader_pid INTEGER,
+  query_id BIGINT ) SERVER file_server OPTIONS ( FILENAME '/tmp/postgresql-2023-09-25_131154.csv',
+  FORMAT 'csv'
+);
+
+\d pglog;
+                                    Foreign table "public.pglog"
+         Column         |            Type             | Collation | Nullable | Default | FDW options 
+------------------------+-----------------------------+-----------+----------+---------+-------------
+ log_time               | timestamp(3) with time zone |           |          |         | 
+ user_name              | text                        |           |          |         | 
+ database_name          | text                        |           |          |         | 
+ process_id             | integer                     |           |          |         | 
+ connection_from        | text                        |           |          |         | 
+ session_id             | text                        |           |          |         | 
+ session_line_num       | bigint                      |           |          |         | 
+ command_tag            | text                        |           |          |         | 
+ session_start_time     | timestamp with time zone    |           |          |         | 
+ virtual_transaction_id | text                        |           |          |         | 
+ transaction_id         | bigint                      |           |          |         | 
+ error_severity         | text                        |           |          |         | 
+ sql_state_code         | text                        |           |          |         | 
+ message                | text                        |           |          |         | 
+ detail                 | text                        |           |          |         | 
+ hint                   | text                        |           |          |         | 
+ internal_query         | text                        |           |          |         | 
+ internal_query_pos     | integer                     |           |          |         | 
+ context                | text                        |           |          |         | 
+ query                  | text                        |           |          |         | 
+ query_pos              | integer                     |           |          |         | 
+ location               | text                        |           |          |         | 
+ application_name       | text                        |           |          |         | 
+ backend_type           | text                        |           |          |         | 
+ leader_pid             | integer                     |           |          |         | 
+ query_id               | bigint                      |           |          |         | 
+Server: file_server
+
+
+-- try querying the table
+ALTER FOREIGN TABLE pglog
+OPTIONS (SET filename '/tmp/pglog.csv');
+
+SELECT log_time, message, detail, query, query_pos, query_id
+FROM pglog
+WHERE query IS NOT NULL
+LIMIT 10;
